@@ -638,6 +638,12 @@ class GameEngine:
         )
 
         # ------------------------------------------------
+        # TASK 3: DRAW MINI-MAP
+        # ------------------------------------------------
+
+        self.draw_minimap()
+
+        # ------------------------------------------------
         # HUD
         # ------------------------------------------------
 
@@ -719,6 +725,59 @@ class GameEngine:
             )
 
         pygame.display.flip()
+
+    # ------------------------------------------------
+    # TASK 3: MINI-MAP
+    # ------------------------------------------------
+
+    def draw_minimap(self):
+
+        # Small map in the top-right corner
+        map_w = 180
+        map_h = 135
+        map_x = WIDTH - map_w - 10
+        map_y = 10
+        cell_w = map_w / COLS
+        cell_h = map_h / ROWS
+
+        # Background/border
+        pygame.draw.rect(
+            self.screen,
+            (10, 10, 20),
+            (map_x - 4, map_y - 4, map_w + 8, map_h + 8)
+        )
+
+        # Draw dungeon layout
+        for r in range(ROWS):
+            for c in range(COLS):
+                cell = self.grid[r][c]
+
+                if cell == WALL:
+                    color = (45, 40, 55)
+                else:
+                    color = (190, 180, 160)
+
+                rect = pygame.Rect(
+                    int(map_x + c * cell_w),
+                    int(map_y + r * cell_h),
+                    max(1, int(cell_w + 1)),
+                    max(1, int(cell_h + 1))
+                )
+                pygame.draw.rect(self.screen, color, rect)
+
+        # Mark player's current position
+        player_c = self.player.rect.centerx // TILE
+        player_r = self.player.rect.centery // TILE
+
+        if 0 <= player_r < ROWS and 0 <= player_c < COLS:
+            player_x = int(map_x + (player_c + 0.5) * cell_w)
+            player_y = int(map_y + (player_r + 0.5) * cell_h)
+            pygame.draw.circle(
+                self.screen,
+                (60, 120, 220),
+                (player_x, player_y),
+                4
+            )
 
     def run(self):
 
