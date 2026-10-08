@@ -219,8 +219,7 @@ class Player:
 
 class Guard:
 
-    def __init__(self, x, y):
-
+    def __init__(self, x, y, patrol_start, patrol_end):
         self.rect = pygame.Rect(
             x,
             y,
@@ -230,21 +229,33 @@ class Guard:
 
         self.color = (180, 50, 50)
 
-        self.direction = random.choice([
-            (GUARD_SPEED, 0),
-            (-GUARD_SPEED, 0),
-            (0, GUARD_SPEED),
-            (0, -GUARD_SPEED)
-        ])
+        # TASK 2: fixed back-and-forth patrol
+        self.patrol_start = patrol_start
+        self.patrol_end = patrol_end
+        self.direction = 1
 
     def move(self, grid, rows, cols):
 
-        dx, dy = self.direction
+        # Move between the two patrol points.
+        target = self.patrol_end if self.direction == 1 else self.patrol_start
 
-        new = self.rect.move(
-            dx,
-            dy
-        )
+        tx, ty = target
+        dx = tx - self.rect.x
+        dy = ty - self.rect.y
+
+        if abs(dx) <= GUARD_SPEED and abs(dy) <= GUARD_SPEED:
+            self.rect.x = tx
+            self.rect.y = ty
+            self.direction *= -1
+            return
+
+        # Patrol along the chosen horizontal/vertical line.
+        if dx != 0:
+            step_x = GUARD_SPEED if dx > 0 else -GUARD_SPEED
+            new = self.rect.move(step_x, 0)
+        else:
+            step_y = GUARD_SPEED if dy > 0 else -GUARD_SPEED
+            new = self.rect.move(0, step_y)
 
         corners = [
             (new.left, new.top),
@@ -253,10 +264,7 @@ class Guard:
             (new.right - 1, new.bottom - 1),
         ]
 
-        blocked = False
-
         for px, py in corners:
-
             c = px // TILE
             r = py // TILE
 
@@ -264,22 +272,11 @@ class Guard:
                 not (0 <= r < rows and 0 <= c < cols)
                 or grid[r][c] == WALL
             ):
-                blocked = True
-                break
+                # Reverse at a blocked patrol endpoint.
+                self.direction *= -1
+                return
 
-        if blocked:
-
-            # Choose another direction
-            self.direction = random.choice([
-                (GUARD_SPEED, 0),
-                (-GUARD_SPEED, 0),
-                (0, GUARD_SPEED),
-                (0, -GUARD_SPEED)
-            ])
-
-        else:
-
-            self.rect = new
+        self.rect = new
 
     def draw(self, screen):
 
@@ -374,49 +371,86 @@ class GameEngine:
         # TASK 2: CREATE GUARD
         # ------------------------------------------------
 
+        # Find floor cells near the chest so the guard patrols
+        # in the final area of the dungeon.
+        chest_positions = [
+            (r, c)
+            for r in range(ROWS)
+            for c in range(COLS)
+            if self.grid[r][c] == CHEST
+        ]
+
         guard_candidates = []
 
-        for r in range(ROWS):
-            for c in range(COLS):
+        if chest_positions:
+            chest_r, chest_c = chest_positions[0]
 
-                # Guard must be on normal floor
-                if self.grid[r][c] != FLOOR:
-                    continue
+            for r in range(ROWS):
+                for c in range(COLS):
 
-                # Do not spawn inside starting room
-                if start and start.collidepoint(c, r):
-                    continue
+                    if self.grid[r][c] != FLOOR:
+                        continue
 
-                # Keep guard away from starting position
-                distance_from_start = (
-                    abs(c - start.centerx)
-                    + abs(r - start.centery)
+                    if start and start.collidepoint(c, r):
+                        continue
+
+                    distance_from_chest = (
+                        abs(c - chest_c) + abs(r - chest_r)
+                    )
+
+                    if distance_from_chest <= 6:
+                        guard_candidates.append((r, c))
+
+        random.shuffle(guard_candidates)
+
+        self.guard = None
+
+        # Choose a floor cell with a usable horizontal or vertical
+        # patrol segment. The guard then moves back and forth between
+        # the two endpoints.
+        for gr, gc in guard_candidates:
+
+            # Try horizontal patrol first.
+            left = gc
+            while left - 1 >= 0 and self.grid[gr][left - 1] == FLOOR:
+                left -= 1
+
+            right = gc
+            while right + 1 < COLS and self.grid[gr][right + 1] == FLOOR:
+                right += 1
+
+            if right - left >= 2:
+                start_point = (left * TILE + 6, gr * TILE + 6)
+                end_point = (right * TILE + 6, gr * TILE + 6)
+
+                self.guard = Guard(
+                    gc * TILE + 6,
+                    gr * TILE + 6,
+                    start_point,
+                    end_point
                 )
+                break
 
-                if distance_from_start < 6:
-                    continue
+            # Try vertical patrol.
+            top = gr
+            while top - 1 >= 0 and self.grid[top - 1][gc] == FLOOR:
+                top -= 1
 
-                guard_candidates.append(
-                    (r, c)
+            bottom = gr
+            while bottom + 1 < ROWS and self.grid[bottom + 1][gc] == FLOOR:
+                bottom += 1
+
+            if bottom - top >= 2:
+                start_point = (gc * TILE + 6, top * TILE + 6)
+                end_point = (gc * TILE + 6, bottom * TILE + 6)
+
+                self.guard = Guard(
+                    gc * TILE + 6,
+                    gr * TILE + 6,
+                    start_point,
+                    end_point
                 )
-
-        if guard_candidates:
-
-            gr, gc = random.choice(
-                guard_candidates
-            )
-
-            gx = gc * TILE + 6
-            gy = gr * TILE + 6
-
-            self.guard = Guard(
-                gx,
-                gy
-            )
-
-        else:
-
-            self.guard = None
+                break
 
         self.won = False
 
@@ -660,6 +694,67 @@ class GameEngine:
             hud
         )
 
+        # ------------------------------------------------
+        # TASK 4: INVENTORY UI
+        # ------------------------------------------------
+
+        # Inventory slot is empty until the key is collected.
+        inventory_x = 8
+        inventory_y = ROWS * TILE + 8
+        inventory_size = 34
+
+        pygame.draw.rect(
+            self.screen,
+            (70, 70, 85),
+            (inventory_x, inventory_y, inventory_size, inventory_size),
+            border_radius=4
+        )
+
+        pygame.draw.rect(
+            self.screen,
+            (160, 160, 175),
+            (inventory_x, inventory_y, inventory_size, inventory_size),
+            2,
+            border_radius=4
+        )
+
+        if self.player.has_key:
+            # Draw a simple key icon inside the inventory slot.
+            key_cx = inventory_x + 12
+            key_cy = inventory_y + 17
+
+            pygame.draw.circle(
+                self.screen,
+                (255, 240, 60),
+                (key_cx, key_cy),
+                6,
+                2
+            )
+
+            pygame.draw.line(
+                self.screen,
+                (255, 240, 60),
+                (key_cx + 5, key_cy),
+                (inventory_x + 27, key_cy),
+                3
+            )
+
+            pygame.draw.line(
+                self.screen,
+                (255, 240, 60),
+                (inventory_x + 23, key_cy),
+                (inventory_x + 23, key_cy + 5),
+                3
+            )
+
+            pygame.draw.line(
+                self.screen,
+                (255, 240, 60),
+                (inventory_x + 27, key_cy),
+                (inventory_x + 27, key_cy + 5),
+                3
+            )
+
         st = self.font.render(
             self.status + "  |  R=Restart",
             True,
@@ -669,7 +764,7 @@ class GameEngine:
         self.screen.blit(
             st,
             (
-                8,
+                inventory_x + inventory_size + 10,
                 ROWS * TILE + 13
             )
         )
