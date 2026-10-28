@@ -32,7 +32,6 @@ def service_tower(tower_id, year):
         print("service failed")
 
 
-
 def overdue(year):
     """Return sites not serviced for two or more years."""
     rows = conn.execute("SELECT site, last_service FROM towers").fetchall()
@@ -45,7 +44,9 @@ def overdue(year):
 
 def risk_level(tower_id):
     """Return 'high' if the tower has more than 3 faults, else 'normal'."""
-    row = conn.execute("SELECT faults FROM towers WHERE id = ?", (tower_id,)).fetchone()
+    row = conn.execute(
+        "SELECT faults FROM towers WHERE id = ?", (tower_id,)
+    ).fetchone()
     if row[0] > 3:
         return "high"
     return "normal"
@@ -61,7 +62,7 @@ def main():
     add_tower("Ridge-A", 2021, 5)
     add_tower("Coast-B", 2024)
     service_tower(2, 2025)
-    total=len(snapshot())
+    total = len(snapshot())
     print(overdue(2025), risk_level(1), total, STATS["service_count"])
 
 
